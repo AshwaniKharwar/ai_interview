@@ -1,8 +1,13 @@
+import os
 from collections.abc import AsyncGenerator
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
+
+os.environ.setdefault(
+    "JWT_SECRET_KEY", "test_secure_jwt_secret_key_for_testing_purposes_only_32chars"
+)
 
 from core.database import Base, get_db
 from main import app
