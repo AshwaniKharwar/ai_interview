@@ -85,12 +85,13 @@ async def regenerate_stage(
 
     prompt = f"""
 Regenerate this interview stage for the role '{job_title}'.
+Stage ID: {current_stage.stage_id}
 Stage Title: {current_stage.title}
 Duration: {current_stage.duration_minutes} mins
 Original Objective: {current_stage.objective}
 User Custom Instructions: {user_instructions or 'Provide fresh, high-impact technical questions.'}
 
-Generate updated starter questions, follow-up probes, and evaluation rubrics matching the instructions.
+Generate updated starter questions, follow-up probes, and evaluation rubrics matching the instructions. Maintain the exact Stage ID '{current_stage.stage_id}' and duration_minutes {current_stage.duration_minutes}.
 """
 
     response = await client.aio.models.generate_content(
@@ -104,4 +105,9 @@ Generate updated starter questions, follow-up probes, and evaluation rubrics mat
     )
 
     stage_dict = json.loads(response.text)
-    return InterviewStage.model_validate(stage_dict)
+    updated_stage = InterviewStage.model_validate(stage_dict)
+    # Explicitly enforce identity and duration preservation
+    updated_stage.stage_id = current_stage.stage_id
+    updated_stage.duration_minutes = current_stage.duration_minutes
+    return updated_stage
+

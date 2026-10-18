@@ -1,6 +1,7 @@
 import io
+import json
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from docx import Document
 from httpx import AsyncClient
@@ -199,6 +200,41 @@ async def test_llm_strictly_fails_without_api_key(monkeypatch):
     assert "GEMINI_API_KEY is not configured" in str(exc_regen.value)
 
 
+@pytest.mark.asyncio
+async def test_regenerate_stage_preserves_stage_id_and_duration_in_llm(monkeypatch):
+    monkeypatch.setattr("core.config.settings.GEMINI_API_KEY", "fake_key")
+    dummy_stage = InterviewStage(
+        stage_id="original_stage_id",
+        title="Original Stage",
+        duration_minutes=15,
+        objective="Original Objective",
+        transition_criteria="Original Criteria",
+    )
+    mock_response = MagicMock()
+    mock_response.text = json.dumps({
+        "stage_id": "hallucinated_stage_xyz",
+        "title": "Updated Title",
+        "duration_minutes": 45,
+        "objective": "Updated Objective",
+        "transition_criteria": "Updated Criteria",
+        "focus_areas": ["Advanced Concurrency"],
+        "starter_questions": ["Explain Goroutines"],
+        "follow_up_probes": [],
+        "probing_rubric": None,
+    })
+
+    with patch("apps.interview.services.llm.genai.Client") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+        mock_client_cls.return_value = mock_client
+
+        result = await regenerate_stage(dummy_stage, "Staff Engineer")
+        assert result.stage_id == "original_stage_id"
+        assert result.duration_minutes == 15
+        assert result.title == "Updated Title"
+        assert result.starter_questions == ["Explain Goroutines"]
+
+
 # --- Endpoint Tests ---
 
 @pytest.mark.asyncio
@@ -357,10 +393,11 @@ async def test_regenerate_stage(client: AsyncClient, auth_headers: dict[str, str
         mock_llm.return_value = get_mock_extraction_result()
         await client.post(f"/api/v1/interviews/{session_id}/generate-blueprint", headers=auth_headers)
 
+        # Return mutated stage_id and duration from mock to verify service enforces original stage_id and duration
         mock_regen.return_value = InterviewStage(
-            stage_id="technical_deep_dive",
+            stage_id="mutated_technical_deep_dive_v2",
             title="Technical Architecture",
-            duration_minutes=15,
+            duration_minutes=99,
             objective="Deep dive",
             transition_criteria="Evaluated",
             focus_areas=["Kubernetes Operators and custom CRDs"],
@@ -375,7 +412,10 @@ async def test_regenerate_stage(client: AsyncClient, auth_headers: dict[str, str
         assert regen_resp.status_code == 200
         stages = regen_resp.json()["blueprint_json"]["stages"]
         tech_stage = next(s for s in stages if s["stage_id"] == "technical_deep_dive")
+        assert tech_stage["stage_id"] == "technical_deep_dive"
+        assert tech_stage["duration_minutes"] == 15
         assert any("Kubernetes Operators" in q for q in tech_stage["starter_questions"] + tech_stage["focus_areas"])
+
 
 
 @pytest.mark.asyncio

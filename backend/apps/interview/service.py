@@ -215,8 +215,12 @@ class InterviewService:
             user_instructions=user_instructions,
         )
 
+        # Explicitly preserve the existing stage ID and duration
+        updated_stage.stage_id = target_stage.stage_id
+        updated_stage.duration_minutes = target_stage.duration_minutes
         blueprint.stages[target_idx] = updated_stage
         session.blueprint_json = blueprint.model_dump()
         await db.commit()
         await db.refresh(session)
         return session
+
