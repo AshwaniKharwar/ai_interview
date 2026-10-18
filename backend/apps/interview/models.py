@@ -1,9 +1,9 @@
 import enum
 import uuid
 from datetime import datetime
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Uuid, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, Uuid, func
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from core.database import Base
@@ -89,5 +89,54 @@ class InterviewSession(Base):
         nullable=False,
     )
 
+    # Relationships
+    turns: Mapped[list["InterviewTurn"]] = relationship(
+        "InterviewTurn",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="InterviewTurn.turn_index",
+        lazy="selectin",
+    )
+
     def __repr__(self) -> str:
         return f"<InterviewSession id={self.id} job_title={self.job_title} status={self.status}>"
+
+
+class InterviewTurn(Base):
+    __tablename__ = "interview_turns"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        index=True,
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("interview_sessions.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    turn_index: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    stage_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    question_text: Mapped[str] = mapped_column(Text, nullable=False)
+    answer_transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Timing & Performance Telemetry
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    was_interrupted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Phase 4 Hook: Structured evaluation of this specific turn
+    turn_evaluation_json: Mapped[dict | None] = mapped_column(JSON_TYPE, nullable=True)
+
+    # Relationships
+    session: Mapped["InterviewSession"] = relationship("InterviewSession", back_populates="turns")
+
+    def __repr__(self) -> str:
+        return f"<InterviewTurn id={self.id} session_id={self.session_id} turn={self.turn_index} stage={self.stage_id}>"
+

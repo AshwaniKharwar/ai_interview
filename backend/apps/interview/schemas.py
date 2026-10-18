@@ -135,7 +135,23 @@ class InterviewResponse(BaseModel):
     status: str
     error_message: Optional[str] = None
     created_at: datetime
-    updated_at: datetime
+    turns: Optional[List["InterviewTurnResponse"]] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InterviewTurnResponse(BaseModel):
+    id: uuid.UUID
+    session_id: uuid.UUID
+    turn_index: int
+    stage_id: str
+    question_text: str
+    answer_transcript: Optional[str] = None
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    latency_ms: Optional[int] = None
+    was_interrupted: bool = False
+    turn_evaluation_json: Optional[dict] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -153,3 +169,4 @@ class BlueprintUpdateRequest(BaseModel):
 
 class StageRegenerateRequest(BaseModel):
     user_instructions: Optional[str] = None
+
