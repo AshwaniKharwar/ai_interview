@@ -15,8 +15,10 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 
-def get_google_authorization_url(state: str | None = None) -> str:
-    """Build the Google OAuth 2.0 consent URL."""
+def get_google_authorization_url(state: str) -> str:
+    """Build the Google OAuth 2.0 consent URL with CSRF state protection."""
+    if not state:
+        raise ValueError("state parameter is required for CSRF protection.")
     params = {
         "client_id": settings.GOOGLE_CLIENT_ID,
         "redirect_uri": settings.GOOGLE_REDIRECT_URI,
@@ -24,10 +26,10 @@ def get_google_authorization_url(state: str | None = None) -> str:
         "scope": "openid email profile",
         "access_type": "offline",
         "prompt": "consent",
+        "state": state,
     }
-    if state:
-        params["state"] = state
     return f"{GOOGLE_AUTH_URL}?{urllib.parse.urlencode(params)}"
+
 
 
 async def exchange_code_for_google_user(code: str) -> GoogleUserInfo:
