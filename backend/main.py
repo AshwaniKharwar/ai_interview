@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from apps.auth.router import router as auth_router
+from apps.interview.router import router as interview_router
 from core.config import settings
 
 
@@ -36,6 +37,7 @@ app.add_middleware(
 
 # Register Modular App Routers under API_V1_STR
 app.include_router(auth_router, prefix=settings.API_V1_STR)
+app.include_router(interview_router, prefix=settings.API_V1_STR)
 
 
 @app.get("/", tags=["Health"])

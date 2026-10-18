@@ -11,6 +11,7 @@ from alembic import context
 from core.config import settings
 from core.database import Base
 import apps.auth.models  # Ensures User model is registered with Base.metadata
+import apps.interview.models  # Ensures InterviewSession model is registered with Base.metadata
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

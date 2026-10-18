@@ -50,6 +50,25 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
     ]
 
+    # Cloudflare R2 Storage Settings
+    R2_ACCOUNT_ID: str = ""
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET_NAME: str = "ai-interview-system"
+    R2_ENDPOINT_URL: str = ""
+
+    # LLM Settings
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.0-flash"
+
+    @property
+    def r2_endpoint(self) -> str:
+        if self.R2_ENDPOINT_URL:
+            return self.R2_ENDPOINT_URL
+        if self.R2_ACCOUNT_ID:
+            return f"https://{self.R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+        return ""
+
     model_config = SettingsConfigDict(
         env_file=(
             os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
