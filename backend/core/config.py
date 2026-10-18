@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/google/callback"
 
+    # Frontend Configuration
+    FRONTEND_URL: str = "http://localhost:3000"
+    FRONTEND_AUTH_CALLBACK_PATH: str = "/auth/callback"
+    FRONTEND_LOGIN_PATH: str = "/login"
+
     # CORS
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",

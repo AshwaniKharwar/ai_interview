@@ -13,13 +13,19 @@ ai_interview_system/
 │   ├── tests/          # Pytest automated test suite
 │   ├── pyproject.toml  # Dependency and project metadata (uv)
 │   └── main.py         # Application entrypoint
+├── frontend/           # Next.js App Router frontend (Bun & Tailwind CSS)
+│   ├── src/app/        # App Router pages (/login, /auth/callback, /dashboard)
+│   ├── src/context/    # AuthContext React provider
+│   ├── src/lib/        # API client and cookie utilities
+│   ├── package.json    # Frontend dependencies (managed with bun)
+│   └── bun.lock        # Bun lockfile
 ├── .gitignore          # Root repository git ignore configuration
 └── README.md           # Project documentation
 ```
 
 ## Quick Start
 
-### Backend Setup
+### 1. Backend Setup
 
 For detailed backend configuration, see [backend/README.md](backend/README.md).
 
@@ -43,6 +49,28 @@ For detailed backend configuration, see [backend/README.md](backend/README.md).
    ```bash
    uv run pytest
    ```
+
+### 2. Frontend Setup (Next.js with Bun)
+
+1. Navigate to the frontend directory:
+   ```bash
+   cd frontend
+   ```
+2. Configure environment variables:
+   ```bash
+   cp .env.local.example .env.local
+   ```
+3. Install dependencies:
+   ```bash
+   bun install
+   ```
+4. Start the development server:
+   ```bash
+   bun run dev --port 3000
+   ```
+5. Access the app at [http://localhost:3000](http://localhost:3000):
+   - Directs to `/login` with Google OAuth button
+   - Upon authentication, redirects to `/dashboard` (clean blank page)
 
 ## API Documentation
 

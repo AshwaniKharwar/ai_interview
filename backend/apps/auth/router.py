@@ -1,6 +1,7 @@
 import secrets
+import urllib.parse
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -72,41 +73,87 @@ async def google_login(
     "/google/callback",
     response_model=TokenResponse,
     summary="Google OAuth Callback",
-    description="Handles redirect back from Google OAuth, exchanges authorization code for user info, upserts user, and returns JWT tokens.",
+    description="Handles redirect back from Google OAuth, exchanges authorization code for user info, upserts user, and returns JWT tokens or redirects to the frontend.",
+    responses={
+        307: {"description": "Redirects to frontend with tokens on success, or to login with error parameter"},
+        200: {"model": TokenResponse, "description": "Returns JSON with tokens when requested"},
+    },
 )
 async def google_callback(
+    request: Request,
     response: Response,
     code: str | None = Query(None, description="Authorization code returned by Google."),
     state: str | None = Query(None, description="OAuth state parameter returned by Google."),
     error: str | None = Query(None, description="Error returned by Google if user cancelled."),
+    redirect: bool | None = Query(None, description="Force redirect behavior (True to redirect to frontend, False for JSON)."),
+    format: str | None = Query(None, description="Force response format, e.g. 'json'."),
     oauth_state: str | None = Cookie(None, description="OAuth state cookie for CSRF validation."),
     db: AsyncSession = Depends(get_db),
 ):
-    if error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Google OAuth error: {error}",
-        )
-    if not state or not oauth_state or not secrets.compare_digest(state, oauth_state):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid OAuth state parameter.",
-        )
-    if not code:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing authorization code from Google callback.",
-        )
+    accept_header = request.headers.get("accept", "")
+    if redirect is True:
+        wants_redirect = True
+    elif redirect is False or format == "json":
+        wants_redirect = False
+    else:
+        wants_redirect = "text/html" in accept_header
 
-    response.delete_cookie(
+    def handle_error(detail: str):
+        if not wants_redirect:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=detail,
+            )
+        err_url = f"{settings.FRONTEND_URL}{settings.FRONTEND_LOGIN_PATH}?error={urllib.parse.quote(detail)}"
+        err_resp = RedirectResponse(url=err_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+        err_resp.delete_cookie(
+            key="oauth_state",
+            httponly=True,
+            secure=not settings.DEBUG,
+            samesite="lax",
+        )
+        return err_resp
+
+    if error:
+        return handle_error(f"Google OAuth error: {error}")
+    if not state or not oauth_state or not secrets.compare_digest(state, oauth_state):
+        return handle_error("Invalid OAuth state parameter.")
+    if not code:
+        return handle_error("Missing authorization code from Google callback.")
+
+    try:
+        user_info = await exchange_code_for_google_user(code)
+        user = await get_or_create_user(db, user_info)
+        tokens = generate_tokens_for_user(user)
+    except HTTPException as exc:
+        if not wants_redirect:
+            raise exc
+        return handle_error(str(exc.detail))
+
+    if not wants_redirect:
+        response.delete_cookie(
+            key="oauth_state",
+            httponly=True,
+            secure=not settings.DEBUG,
+            samesite="lax",
+        )
+        return tokens
+
+    callback_url = (
+        f"{settings.FRONTEND_URL}{settings.FRONTEND_AUTH_CALLBACK_PATH}"
+        f"?access_token={urllib.parse.quote(tokens.access_token)}"
+        f"&refresh_token={urllib.parse.quote(tokens.refresh_token)}"
+        f"&token_type={urllib.parse.quote(tokens.token_type)}"
+        f"&expires_in={tokens.expires_in}"
+    )
+    redirect_response = RedirectResponse(url=callback_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    redirect_response.delete_cookie(
         key="oauth_state",
         httponly=True,
         secure=not settings.DEBUG,
         samesite="lax",
     )
-    user_info = await exchange_code_for_google_user(code)
-    user = await get_or_create_user(db, user_info)
-    return generate_tokens_for_user(user)
+    return redirect_response
 
 
 @router.post(

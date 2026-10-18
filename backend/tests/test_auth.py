@@ -120,6 +120,31 @@ async def test_google_callback_csrf_validation(client: AsyncClient):
         assert "access_token" in tokens
         assert "refresh_token" in tokens
 
+    # Case 8: Browser request with Accept: text/html redirects to frontend with tokens
+    client.cookies.set("oauth_state", "legitimate_state")
+    with patch("apps.auth.router.exchange_code_for_google_user", new_callable=AsyncMock) as mock_exchange:
+        mock_exchange.return_value = mock_user_info
+        r8 = await client.get(
+            "/api/v1/auth/google/callback?code=valid_code&state=legitimate_state",
+            headers={"Accept": "text/html"},
+            follow_redirects=False,
+        )
+        assert r8.status_code == 307
+        assert "location" in r8.headers
+        loc = r8.headers["location"]
+        assert loc.startswith("http://localhost:3000/auth/callback")
+        assert "access_token=" in loc
+        assert "refresh_token=" in loc
+
+    # Case 9: Browser request with error redirects to frontend login
+    r9 = await client.get(
+        "/api/v1/auth/google/callback?error=user_denied&state=legitimate_state",
+        headers={"Accept": "text/html"},
+        follow_redirects=False,
+    )
+    assert r9.status_code == 307
+    assert r9.headers["location"].startswith("http://localhost:3000/login?error=")
+
 
 @pytest.mark.asyncio
 async def test_user_creation_and_tokens(db_session: AsyncSession):
