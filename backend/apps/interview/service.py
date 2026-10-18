@@ -80,6 +80,24 @@ class InterviewService:
         return result.scalar_one_or_none()
 
     @staticmethod
+    async def list_sessions(
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[InterviewSession]:
+        """Lists interview sessions belonging to the user ordered by created_at DESC."""
+        stmt = (
+            select(InterviewSession)
+            .where(InterviewSession.user_id == user_id)
+            .order_by(InterviewSession.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
+
+    @staticmethod
     async def get_presigned_resume_url(r2_key: Optional[str]) -> Optional[str]:
         """Generates a secure temporary presigned download URL for the resume in R2."""
         if not r2_key or not storage_service.is_configured:

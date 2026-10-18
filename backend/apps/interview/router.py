@@ -75,6 +75,26 @@ async def create_interview(
     return resp
 
 
+@router.get("/", response_model=list[InterviewResponse])
+async def list_interviews(
+    limit: int = 50,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Lists all interview sessions for the current authenticated user."""
+    sessions = await InterviewService.list_sessions(
+        db=db, user_id=current_user.id, limit=limit, offset=offset
+    )
+    responses = []
+    for s in sessions:
+        presigned_url = await InterviewService.get_presigned_resume_url(s.resume_file_url)
+        resp = InterviewResponse.model_validate(s)
+        resp.resume_download_url = presigned_url
+        responses.append(resp)
+    return responses
+
+
 @router.post(
     "/{session_id}/generate-blueprint",
     response_model=InterviewStatusResponse,

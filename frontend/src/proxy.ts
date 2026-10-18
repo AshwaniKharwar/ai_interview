@@ -9,8 +9,8 @@ export function proxy(request: NextRequest) {
   const refreshToken = request.cookies.get(COOKIE_KEYS.REFRESH_TOKEN)?.value;
   const isAuthenticated = Boolean(accessToken || refreshToken);
 
-  // If user tries to access /dashboard without authentication, redirect to /login
-  if (pathname.startsWith(ROUTES.DASHBOARD)) {
+  // If user tries to access /dashboard or /interview without authentication, redirect to /login
+  if (pathname.startsWith(ROUTES.DASHBOARD) || pathname.startsWith("/interview")) {
     if (!isAuthenticated) {
       const loginUrl = new URL(ROUTES.LOGIN, request.url);
       return NextResponse.redirect(loginUrl);
@@ -31,6 +31,7 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     "/dashboard/:path*",
+    "/interview/:path*",
     "/login",
   ],
 };

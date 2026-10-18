@@ -402,3 +402,47 @@ async def test_user_session_isolation(
         headers=second_auth_headers,
     )
     assert put_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_list_interviews_user_isolation(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    second_auth_headers: dict[str, str],
+):
+    # User 1 creates two sessions
+    await client.post(
+        "/api/v1/interviews/",
+        json={"job_title": "Role 1", "job_description_raw": "JD 1"},
+        headers=auth_headers,
+    )
+    await client.post(
+        "/api/v1/interviews/",
+        json={"job_title": "Role 2", "job_description_raw": "JD 2"},
+        headers=auth_headers,
+    )
+
+    # User 2 creates one session
+    await client.post(
+        "/api/v1/interviews/",
+        json={"job_title": "User 2 Role", "job_description_raw": "User 2 JD"},
+        headers=second_auth_headers,
+    )
+
+    # User 1 lists their interviews
+    resp1 = await client.get("/api/v1/interviews/", headers=auth_headers)
+    assert resp1.status_code == 200
+    items1 = resp1.json()
+    assert len(items1) >= 2
+    titles1 = [item["job_title"] for item in items1]
+    assert "Role 1" in titles1
+    assert "Role 2" in titles1
+    assert "User 2 Role" not in titles1
+
+    # User 2 lists their interviews
+    resp2 = await client.get("/api/v1/interviews/", headers=second_auth_headers)
+    assert resp2.status_code == 200
+    items2 = resp2.json()
+    titles2 = [item["job_title"] for item in items2]
+    assert "User 2 Role" in titles2
+    assert "Role 1" not in titles2

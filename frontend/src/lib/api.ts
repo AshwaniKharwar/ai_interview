@@ -162,3 +162,113 @@ export async function apiFetch<T>(
 
   return response.json();
 }
+
+import {
+  InterviewBlueprint,
+  InterviewCreateRequest,
+  InterviewSession,
+  InterviewStatusResponse,
+  ResumeUploadResponse,
+} from "@/types/interview";
+
+/**
+ * Uploads a resume document (PDF or DOCX) to backend and Cloudflare R2
+ */
+export async function uploadResumeApi(file: File): Promise<ResumeUploadResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  return apiFetch<ResumeUploadResponse>("/interviews/upload-resume", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+/**
+ * Creates a new interview session in DRAFT state
+ */
+export async function createInterviewApi(
+  payload: InterviewCreateRequest
+): Promise<InterviewSession> {
+  return apiFetch<InterviewSession>("/interviews/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Initiates asynchronous LLM extraction and blueprint generation
+ */
+export async function generateBlueprintApi(
+  sessionId: string
+): Promise<InterviewStatusResponse> {
+  return apiFetch<InterviewStatusResponse>(`/interviews/${sessionId}/generate-blueprint`, {
+    method: "POST",
+  });
+}
+
+/**
+ * Polls the current status of the interview session
+ */
+export async function getInterviewStatusApi(
+  sessionId: string
+): Promise<InterviewStatusResponse> {
+  return apiFetch<InterviewStatusResponse>(`/interviews/${sessionId}/status`);
+}
+
+/**
+ * Retrieves the full session details including profiles, gap analysis, and blueprint
+ */
+export async function getInterviewSessionApi(
+  sessionId: string
+): Promise<InterviewSession> {
+  return apiFetch<InterviewSession>(`/interviews/${sessionId}`);
+}
+
+/**
+ * Lists the authenticated user's interview sessions ordered by recent creation
+ */
+export async function listInterviewsApi(): Promise<InterviewSession[]> {
+  return apiFetch<InterviewSession[]>("/interviews/");
+}
+
+/**
+ * Updates the interview blueprint with customized stage configurations
+ */
+export async function updateBlueprintApi(
+  sessionId: string,
+  blueprint: InterviewBlueprint
+): Promise<InterviewSession> {
+  return apiFetch<InterviewSession>(`/interviews/${sessionId}/blueprint`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ blueprint }),
+  });
+}
+
+/**
+ * Regenerates a single stage in the blueprint with custom AI prompt instructions
+ */
+export async function regenerateStageApi(
+  sessionId: string,
+  stageId: string,
+  userInstructions?: string
+): Promise<InterviewSession> {
+  return apiFetch<InterviewSession>(
+    `/interviews/${sessionId}/stages/${stageId}/regenerate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        user_instructions: userInstructions || null,
+      }),
+    }
+  );
+}
