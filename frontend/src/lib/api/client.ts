@@ -31,16 +31,18 @@ export class HttpClient {
 
   constructor(private readonly baseUrl: string = API_BASE_URL) {}
 
-  private async getValidToken(): Promise<string | null> {
-    const currentToken = getAccessToken();
-    if (currentToken) return currentToken;
-
-    const refreshToken = getRefreshToken();
-    if (!refreshToken) return null;
-
+  private async getValidToken(forceRefresh = false): Promise<string | null> {
     if (this.isRefreshing && this.refreshPromise) {
       return this.refreshPromise;
     }
+
+    if (!forceRefresh) {
+      const currentToken = getAccessToken();
+      if (currentToken) return currentToken;
+    }
+
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) return null;
 
     this.isRefreshing = true;
     this.refreshPromise = (async () => {
@@ -80,10 +82,11 @@ export class HttpClient {
     const headers = new Headers(options.headers || {});
     headers.set("Accept", "application/json");
 
+    let sentToken: string | null = null;
     if (!options.skipAuth) {
-      const token = await this.getValidToken();
-      if (token) {
-        headers.set("Authorization", `Bearer ${token}`);
+      sentToken = await this.getValidToken();
+      if (sentToken) {
+        headers.set("Authorization", `Bearer ${sentToken}`);
       }
     }
 
@@ -100,7 +103,12 @@ export class HttpClient {
 
     // Handle 401 Unauthorized - attempt token refresh and single retry
     if (response.status === 401 && !options.skipAuth) {
-      const refreshedToken = await this.getValidToken();
+      const currentToken = getAccessToken();
+      const refreshedToken =
+        currentToken && currentToken !== sentToken
+          ? currentToken
+          : await this.getValidToken(true);
+
       if (refreshedToken) {
         headers.set("Authorization", `Bearer ${refreshedToken}`);
         response = await fetch(url, {
