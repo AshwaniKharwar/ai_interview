@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
     FRONTEND_AUTH_CALLBACK_PATH: str = "/auth/callback"
     FRONTEND_LOGIN_PATH: str = "/login"
+    FRONTEND_DASHBOARD_PATH: str = "/dashboard"
 
     # CORS
     CORS_ORIGINS: List[str] = [

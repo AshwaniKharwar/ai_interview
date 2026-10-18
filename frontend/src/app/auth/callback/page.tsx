@@ -4,6 +4,7 @@ import React, { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { ROUTES } from "@/lib/constants";
+import { fetchUserProfile } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 
 function CallbackContent() {
@@ -29,7 +30,14 @@ function CallbackContent() {
     }
 
     if (!accessToken || !refreshToken) {
-      router.replace(`${ROUTES.LOGIN}?error=${encodeURIComponent("Missing authentication tokens")}`);
+      // Check if user is authenticated via secure HttpOnly cookies
+      fetchUserProfile()
+        .then(() => {
+          router.replace(ROUTES.DASHBOARD);
+        })
+        .catch(() => {
+          router.replace(`${ROUTES.LOGIN}?error=${encodeURIComponent("Missing authentication tokens")}`);
+        });
       return;
     }
 

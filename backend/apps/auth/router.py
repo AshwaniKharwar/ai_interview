@@ -1,7 +1,7 @@
 import secrets
 import urllib.parse
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Body, Cookie, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -75,7 +75,7 @@ async def google_login(
     summary="Google OAuth Callback",
     description="Handles redirect back from Google OAuth, exchanges authorization code for user info, upserts user, and returns JWT tokens or redirects to the frontend.",
     responses={
-        307: {"description": "Redirects to frontend with tokens on success, or to login with error parameter"},
+        307: {"description": "Redirects to frontend dashboard with auth cookies set, or to login with error parameter"},
         200: {"model": TokenResponse, "description": "Returns JSON with tokens when requested"},
     },
 )
@@ -137,21 +137,47 @@ async def google_callback(
             secure=not settings.DEBUG,
             samesite="lax",
         )
+        response.set_cookie(
+            key="access_token",
+            value=tokens.access_token,
+            httponly=True,
+            secure=not settings.DEBUG,
+            samesite="lax",
+            max_age=tokens.expires_in,
+        )
+        response.set_cookie(
+            key="refresh_token",
+            value=tokens.refresh_token,
+            httponly=True,
+            secure=not settings.DEBUG,
+            samesite="lax",
+            max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        )
         return tokens
 
-    callback_url = (
-        f"{settings.FRONTEND_URL}{settings.FRONTEND_AUTH_CALLBACK_PATH}"
-        f"?access_token={urllib.parse.quote(tokens.access_token)}"
-        f"&refresh_token={urllib.parse.quote(tokens.refresh_token)}"
-        f"&token_type={urllib.parse.quote(tokens.token_type)}"
-        f"&expires_in={tokens.expires_in}"
-    )
-    redirect_response = RedirectResponse(url=callback_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    redirect_url = f"{settings.FRONTEND_URL}{settings.FRONTEND_DASHBOARD_PATH}"
+    redirect_response = RedirectResponse(url=redirect_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     redirect_response.delete_cookie(
         key="oauth_state",
         httponly=True,
         secure=not settings.DEBUG,
         samesite="lax",
+    )
+    redirect_response.set_cookie(
+        key="access_token",
+        value=tokens.access_token,
+        httponly=True,
+        secure=not settings.DEBUG,
+        samesite="lax",
+        max_age=tokens.expires_in,
+    )
+    redirect_response.set_cookie(
+        key="refresh_token",
+        value=tokens.refresh_token,
+        httponly=True,
+        secure=not settings.DEBUG,
+        samesite="lax",
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
     )
     return redirect_response
 
@@ -160,13 +186,38 @@ async def google_callback(
     "/refresh",
     response_model=TokenResponse,
     summary="Refresh JWT Token",
-    description="Provides a new access token using a valid refresh token.",
+    description="Provides a new access token using a valid refresh token from request body or HttpOnly cookie.",
 )
 async def refresh_token_endpoint(
-    body: TokenRefreshRequest,
+    response: Response,
+    body: TokenRefreshRequest | None = Body(default=None),
+    refresh_token: str | None = Cookie(None),
     db: AsyncSession = Depends(get_db),
 ):
-    return await refresh_user_tokens(db, body.refresh_token)
+    token_to_refresh = (body.refresh_token if body and body.refresh_token else None) or refresh_token
+    if not token_to_refresh:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing refresh token",
+        )
+    tokens = await refresh_user_tokens(db, token_to_refresh)
+    response.set_cookie(
+        key="access_token",
+        value=tokens.access_token,
+        httponly=True,
+        secure=not settings.DEBUG,
+        samesite="lax",
+        max_age=tokens.expires_in,
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=tokens.refresh_token,
+        httponly=True,
+        secure=not settings.DEBUG,
+        samesite="lax",
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+    )
+    return tokens
 
 
 @router.get(
@@ -185,9 +236,22 @@ async def get_my_profile(
     "/logout",
     response_model=MessageResponse,
     summary="User Logout",
-    description="Stateless logout endpoint informing the client to discard tokens.",
+    description="Stateless logout endpoint informing the client to discard tokens and clearing auth cookies.",
 )
 async def logout(
+    response: Response,
     current_user: User = Depends(get_current_active_user),
 ):
+    response.delete_cookie(
+        key="access_token",
+        httponly=True,
+        secure=not settings.DEBUG,
+        samesite="lax",
+    )
+    response.delete_cookie(
+        key="refresh_token",
+        httponly=True,
+        secure=not settings.DEBUG,
+        samesite="lax",
+    )
     return MessageResponse(message="Successfully logged out.")

@@ -27,7 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const router = useRouter();
 
-  // Load user profile from stored token on mount
+  // Load user profile from stored token or HttpOnly cookie on mount
   useEffect(() => {
     let isMounted = true;
 
@@ -49,6 +49,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      // Check for active session via HttpOnly cookies
+      try {
+        const profile = await fetchUserProfile();
+        if (isMounted) {
+          setUser(profile);
+          setIsLoading(false);
+        }
+        return;
+      } catch {
+        // Not authenticated via existing cookie, attempt refresh
+      }
+
       if (refreshToken) {
         try {
           const newTokens = await refreshTokensApi(refreshToken);
@@ -62,6 +74,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         } catch {
           clearTokens();
+        }
+      } else {
+        // Attempt refresh via HttpOnly refresh cookie
+        try {
+          const newTokens = await refreshTokensApi();
+          if (isMounted) {
+            if (newTokens?.access_token) {
+              setAccessToken(newTokens.access_token);
+            }
+            const profile = await fetchUserProfile(newTokens.access_token);
+            setUser(profile);
+            setIsLoading(false);
+          }
+          return;
+        } catch {
+          // No valid session
         }
       }
 
@@ -103,16 +131,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshSession = useCallback(async (): Promise<boolean> => {
     const refreshToken = getRefreshToken();
-    if (!refreshToken) {
-      clearTokens();
-      setUser(null);
-      setAccessToken(null);
-      return false;
-    }
 
     try {
       const newTokens = await refreshTokensApi(refreshToken);
-      setTokens(newTokens);
+      if (refreshToken) {
+        setTokens(newTokens);
+      }
       setAccessToken(newTokens.access_token);
       const profile = await fetchUserProfile(newTokens.access_token);
       setUser(profile);
@@ -127,9 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     const token = accessToken || getAccessToken();
-    if (token) {
-      await logoutApi(token);
-    }
+    await logoutApi(token);
     clearTokens();
     setUser(null);
     setAccessToken(null);
@@ -140,7 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     accessToken,
     isLoading,
-    isAuthenticated: Boolean(user && accessToken),
+    isAuthenticated: Boolean(user),
     loginWithGoogle,
     logout,
     setSessionFromTokens,

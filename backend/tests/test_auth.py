@@ -120,7 +120,7 @@ async def test_google_callback_csrf_validation(client: AsyncClient):
         assert "access_token" in tokens
         assert "refresh_token" in tokens
 
-    # Case 8: Browser request with Accept: text/html redirects to frontend with tokens
+    # Case 8: Browser request with Accept: text/html redirects to frontend dashboard with secure HttpOnly cookies
     client.cookies.set("oauth_state", "legitimate_state")
     with patch("apps.auth.router.exchange_code_for_google_user", new_callable=AsyncMock) as mock_exchange:
         mock_exchange.return_value = mock_user_info
@@ -132,9 +132,11 @@ async def test_google_callback_csrf_validation(client: AsyncClient):
         assert r8.status_code == 307
         assert "location" in r8.headers
         loc = r8.headers["location"]
-        assert loc.startswith("http://localhost:3000/auth/callback")
-        assert "access_token=" in loc
-        assert "refresh_token=" in loc
+        assert loc == "http://localhost:3000/dashboard"
+        assert "access_token" not in loc
+        assert "refresh_token" not in loc
+        assert "access_token" in r8.cookies
+        assert "refresh_token" in r8.cookies
 
     # Case 9: Browser request with error redirects to frontend login
     r9 = await client.get(
@@ -202,6 +204,13 @@ async def test_get_current_user_profile(client: AsyncClient, db_session: AsyncSe
     assert user_data["full_name"] == "Test User"
     assert user_data["is_active"] is True
 
+    # Fetch profile using HttpOnly access_token cookie
+    client.cookies.set("access_token", token_bundle.access_token)
+    cookie_response = await client.get("/api/v1/auth/me")
+    assert cookie_response.status_code == 200
+    assert cookie_response.json()["email"] == "test.user@example.com"
+    client.cookies.delete("access_token")
+
 
 @pytest.mark.asyncio
 async def test_unauthorized_access(client: AsyncClient):
@@ -221,7 +230,7 @@ async def test_token_refresh_endpoint(client: AsyncClient, db_session: AsyncSess
 
     token_bundle = generate_tokens_for_user(user)
 
-    # Valid refresh token
+    # Valid refresh token via body
     refresh_response = await client.post(
         "/api/v1/auth/refresh",
         json={"refresh_token": token_bundle.refresh_token},
@@ -230,6 +239,16 @@ async def test_token_refresh_endpoint(client: AsyncClient, db_session: AsyncSess
     new_tokens = refresh_response.json()
     assert "access_token" in new_tokens
     assert "refresh_token" in new_tokens
+    assert "access_token" in refresh_response.cookies
+    assert "refresh_token" in refresh_response.cookies
+
+    # Valid refresh token via HttpOnly cookie
+    client.cookies.set("refresh_token", token_bundle.refresh_token)
+    cookie_refresh_response = await client.post("/api/v1/auth/refresh")
+    assert cookie_refresh_response.status_code == 200
+    assert "access_token" in cookie_refresh_response.json()
+    assert "access_token" in cookie_refresh_response.cookies
+    client.cookies.delete("refresh_token")
 
     # Invalid refresh token
     bad_refresh_response = await client.post(
@@ -255,3 +274,10 @@ async def test_logout_endpoint(client: AsyncClient, db_session: AsyncSession):
     response = await client.post("/api/v1/auth/logout", headers=headers)
     assert response.status_code == 200
     assert response.json() == {"message": "Successfully logged out."}
+
+    # Test logout via cookie and ensure cookies are cleared
+    client.cookies.set("access_token", token_bundle.access_token)
+    client.cookies.set("refresh_token", token_bundle.refresh_token)
+    cookie_logout_response = await client.post("/api/v1/auth/logout")
+    assert cookie_logout_response.status_code == 200
+    assert cookie_logout_response.json() == {"message": "Successfully logged out."}

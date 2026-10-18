@@ -1,5 +1,5 @@
 import uuid
-from fastapi import Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,23 +11,28 @@ from core.security import decode_token
 
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/auth/google/login",
-    auto_error=True,
+    auto_error=False,
 )
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    token: str | None = Depends(oauth2_scheme),
+    access_token: str | None = Cookie(None),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Validate Bearer JWT access token and return the authenticated User."""
+    """Validate Bearer JWT access token or HttpOnly cookie and return the authenticated User."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
+    auth_token = token or access_token
+    if not auth_token:
+        raise credentials_exception
+
     try:
-        payload = decode_token(token)
+        payload = decode_token(auth_token)
     except ValueError:
         raise credentials_exception
 
