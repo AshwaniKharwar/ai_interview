@@ -1,6 +1,6 @@
 """create interview sessions table
 
-Revision ID: 0002_create_interview_sessions_table
+Revision ID: 0002_create_interview_sessions
 Revises: 0001_create_users_table
 Create Date: 2026-10-18 15:40:00.000000
 
@@ -12,13 +12,22 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "0002_create_interview_sessions_table"
+revision: str = "0002_create_interview_sessions"
 down_revision: Union[str, None] = "0001_create_users_table"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Widen alembic_version.version_num so future migrations can use descriptive names
+    op.alter_column(
+        "alembic_version",
+        "version_num",
+        existing_type=sa.String(length=32),
+        type_=sa.String(length=255),
+        existing_nullable=False,
+    )
+
     op.create_table(
         "interview_sessions",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
@@ -71,3 +80,11 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_interview_sessions_user_id"), table_name="interview_sessions")
     op.drop_index(op.f("ix_interview_sessions_id"), table_name="interview_sessions")
     op.drop_table("interview_sessions")
+
+    op.alter_column(
+        "alembic_version",
+        "version_num",
+        existing_type=sa.String(length=255),
+        type_=sa.String(length=32),
+        existing_nullable=False,
+    )
