@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from docx import Document
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.auth.models import User
 from apps.auth.service import generate_tokens_for_user
@@ -446,3 +447,124 @@ async def test_list_interviews_user_isolation(
     titles2 = [item["job_title"] for item in items2]
     assert "User 2 Role" in titles2
     assert "Role 1" not in titles2
+
+
+@pytest.mark.asyncio
+async def test_blueprint_generation_conflict_when_already_generating(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+):
+    payload = {
+        "job_title": "Backend Engineer",
+        "job_description_raw": "Python engineer",
+        "resume_raw_text": "Experienced Python Engineer",
+    }
+    create_resp = await client.post("/api/v1/interviews/", json=payload, headers=auth_headers)
+    assert create_resp.status_code == 201
+    session_id = create_resp.json()["id"]
+
+    session = await db_session.get(InterviewSession, uuid.UUID(session_id))
+    session.status = InterviewStatus.BLUEPRINT_GENERATING.value
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/interviews/{session_id}/generate-blueprint", headers=auth_headers
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "Blueprint generation is already in progress for this session."
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid_status",
+    [
+        InterviewStatus.IN_PROGRESS.value,
+        InterviewStatus.COMPLETED.value,
+        InterviewStatus.EVALUATED.value,
+    ],
+)
+async def test_blueprint_generation_rejected_for_in_progress_or_finished_session(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+    invalid_status: str,
+):
+    payload = {
+        "job_title": "Backend Engineer",
+        "job_description_raw": "Python engineer",
+        "resume_raw_text": "Experienced Python Engineer",
+    }
+    create_resp = await client.post("/api/v1/interviews/", json=payload, headers=auth_headers)
+    session_id = create_resp.json()["id"]
+
+    session = await db_session.get(InterviewSession, uuid.UUID(session_id))
+    session.status = invalid_status
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/interviews/{session_id}/generate-blueprint", headers=auth_headers
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == f"Cannot generate blueprint for session in status {invalid_status}."
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "disallowed_status",
+    [
+        InterviewStatus.BLUEPRINT_GENERATING.value,
+        InterviewStatus.IN_PROGRESS.value,
+        InterviewStatus.COMPLETED.value,
+        InterviewStatus.EVALUATED.value,
+    ],
+)
+async def test_blueprint_mutations_rejected_outside_draft_and_ready(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+    disallowed_status: str,
+):
+    payload = {
+        "job_title": "Backend Engineer",
+        "job_description_raw": "Python engineer",
+        "resume_raw_text": "Experienced Python Engineer",
+    }
+    create_resp = await client.post("/api/v1/interviews/", json=payload, headers=auth_headers)
+    session_id = create_resp.json()["id"]
+
+    session = await db_session.get(InterviewSession, uuid.UUID(session_id))
+    session.status = disallowed_status
+    await db_session.commit()
+
+    # Test update_blueprint rejected
+    put_resp = await client.put(
+        f"/api/v1/interviews/{session_id}/blueprint",
+        json={
+            "blueprint": {
+                "total_duration_minutes": 30,
+                "difficulty_level": "medium",
+                "interviewer_persona": "rigorous_collaborative",
+                "stages": [],
+            }
+        },
+        headers=auth_headers,
+    )
+    assert put_resp.status_code == 400
+    assert (
+        put_resp.json()["detail"]
+        == "Blueprint modifications are only allowed prior to starting the interview."
+    )
+
+    # Test regenerate_blueprint_stage rejected
+    regen_resp = await client.post(
+        f"/api/v1/interviews/{session_id}/stages/intro/regenerate",
+        json={"user_instructions": "Make it shorter"},
+        headers=auth_headers,
+    )
+    assert regen_resp.status_code == 400
+    assert (
+        regen_resp.json()["detail"]
+        == "Blueprint modifications are only allowed prior to starting the interview."
+    )
+

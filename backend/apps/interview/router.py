@@ -113,6 +113,21 @@ async def generate_blueprint(
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interview session not found.")
 
+    if session.status == InterviewStatus.BLUEPRINT_GENERATING.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Blueprint generation is already in progress for this session.",
+        )
+    if session.status in [
+        InterviewStatus.IN_PROGRESS.value,
+        InterviewStatus.COMPLETED.value,
+        InterviewStatus.EVALUATED.value,
+    ]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot generate blueprint for session in status {session.status}.",
+        )
+
     session.status = InterviewStatus.BLUEPRINT_GENERATING.value
     await db.commit()
 
@@ -177,6 +192,12 @@ async def update_blueprint(
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interview session not found.")
 
+    if session.status not in [InterviewStatus.DRAFT.value, InterviewStatus.BLUEPRINT_READY.value]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Blueprint modifications are only allowed prior to starting the interview.",
+        )
+
     updated_session = await InterviewService.update_blueprint(db=db, session=session, data=data)
     presigned_url = await InterviewService.get_presigned_resume_url(updated_session.resume_file_url)
     resp = InterviewResponse.model_validate(updated_session)
@@ -196,6 +217,12 @@ async def regenerate_blueprint_stage(
     session = await InterviewService.get_session(db=db, session_id=session_id, user_id=current_user.id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interview session not found.")
+
+    if session.status not in [InterviewStatus.DRAFT.value, InterviewStatus.BLUEPRINT_READY.value]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Blueprint modifications are only allowed prior to starting the interview.",
+        )
 
     try:
         updated_session = await InterviewService.regenerate_stage(
