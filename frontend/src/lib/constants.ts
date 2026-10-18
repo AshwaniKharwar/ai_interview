@@ -11,4 +11,8 @@ export const ROUTES = {
   LOGIN: "/login",
   DASHBOARD: "/dashboard",
   AUTH_CALLBACK: "/auth/callback",
+  INTERVIEW_NEW: "/interview/new",
+  INTERVIEW_GENERATING: (id: string) => `/interview/${id}/generating`,
+  INTERVIEW_PREPARE: (id: string) => `/interview/${id}/prepare`,
+  INTERVIEW_ROOM: (id: string) => `/interview/${id}/room`,
 } as const;
