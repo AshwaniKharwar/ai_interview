@@ -34,10 +34,9 @@ class InterviewService:
 
         # 3. Upload to R2 under resumes/{user_id}/{unique_id}/{filename}
         r2_key = f"resumes/{user_id}/{uuid.uuid4()}/{filename}"
-        if storage_service.is_configured:
-            await storage_service.upload_file_bytes(file_bytes, r2_key, content_type)
-        else:
-            logger.warning("R2 storage not configured; proceeding without remote file persistence.")
+        if not storage_service.is_configured:
+            raise ValueError("Cloudflare R2 storage is not configured. Resume upload cannot proceed.")
+        await storage_service.upload_file_bytes(file_bytes, r2_key, content_type)
 
         return ResumeUploadResponse(
             resume_file_url=r2_key,

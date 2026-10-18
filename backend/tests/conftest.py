@@ -39,11 +39,8 @@ def anyio_backend():
 
 
 @pytest.fixture(autouse=True)
-async def setup_test_db(monkeypatch: pytest.MonkeyPatch):
+async def setup_test_db():
     """Create all database tables before test and drop afterwards."""
-    # Ensure automated tests run offline and deterministically without remote LLM calls
-    monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
-
     import core.database
     import apps.interview.service
     core.database.AsyncSessionLocal = TestingSessionLocal
