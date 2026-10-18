@@ -25,8 +25,9 @@ def sanitize_extracted_text(text: str) -> str:
     text = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "", text)
 
     # Neutralize potential delimiter breakouts
-    text = text.replace("</untrusted_resume_content>", "[del]")
-    text = text.replace("<untrusted_resume_content>", "[del]")
+    text = re.sub(r"<\s*/?\s*untrusted_resume_content\s*>", "[del]", text, flags=re.IGNORECASE)
+    text = re.sub(r"<\s*/?\s*user_instructions\s*>", "[del]", text, flags=re.IGNORECASE)
+    text = re.sub(r"<\s*/?\s*job_description\s*>", "[del]", text, flags=re.IGNORECASE)
 
     # Normalize excessive newlines (keep max 2 consecutive newlines)
     text = re.sub(r"\n{3,}", "\n\n", text)

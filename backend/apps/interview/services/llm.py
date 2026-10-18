@@ -8,6 +8,7 @@ from apps.interview.schemas import (
     ExtractionAndBlueprintResult,
     InterviewStage,
 )
+from apps.interview.services.parser import sanitize_extracted_text
 
 
 async def generate_extraction_and_blueprint(
@@ -83,13 +84,18 @@ async def regenerate_stage(
 
     client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
+    sanitized_instructions = sanitize_extracted_text(user_instructions) if user_instructions else ""
+
     prompt = f"""
 Regenerate this interview stage for the role '{job_title}'.
 Stage ID: {current_stage.stage_id}
 Stage Title: {current_stage.title}
 Duration: {current_stage.duration_minutes} mins
 Original Objective: {current_stage.objective}
-User Custom Instructions: {user_instructions or 'Provide fresh, high-impact technical questions.'}
+
+<user_instructions>
+{sanitized_instructions or 'Provide fresh, high-impact technical questions.'}
+</user_instructions>
 
 Generate updated starter questions, follow-up probes, and evaluation rubrics matching the instructions. Maintain the exact Stage ID '{current_stage.stage_id}' and duration_minutes {current_stage.duration_minutes}.
 """
