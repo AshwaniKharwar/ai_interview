@@ -34,11 +34,17 @@ export function useLiveInterview(sessionId: string) {
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const liveStateRef = useRef<LiveSessionState>("INIT");
+  const isMutedRef = useRef(false);
 
   // Keep liveStateRef in sync with liveState
   useEffect(() => {
     liveStateRef.current = liveState;
   }, [liveState]);
+
+  // Keep isMutedRef in sync with isMuted
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
 
   // Load session metadata on mount
   useEffect(() => {
@@ -110,12 +116,14 @@ export function useLiveInterview(sessionId: string) {
       const ws = new WebSocket(wsUrl);
       socketRef.current = ws;
 
-      // Stream binary PCM frames from AudioWorklet to WebSocket only when AI is listening
+      // Stream binary PCM frames from AudioWorklet to WebSocket only when AI is listening or handling barge-in interrupt flush
       resamplerNode.port.onmessage = (e) => {
+        const currentState = liveStateRef.current;
+        const canStream = currentState === "LISTENING" || currentState === "INTERRUPT_FLUSH";
         if (
           ws.readyState === WebSocket.OPEN &&
-          !isMuted &&
-          liveStateRef.current === "LISTENING"
+          !isMutedRef.current &&
+          canStream
         ) {
           ws.send(e.data);
         }
@@ -295,12 +303,13 @@ export function useLiveInterview(sessionId: string) {
         err instanceof Error ? err.message : "Failed to access microphone or connect."
       );
     }
-  }, [sessionId, isMuted]);
+  }, [sessionId]);
 
   // Toggle mic mute
   const toggleMute = useCallback(() => {
     setIsMuted((prev) => {
       const next = !prev;
+      isMutedRef.current = next;
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getAudioTracks().forEach((track) => {
           track.enabled = !next;
