@@ -163,6 +163,9 @@ export default function DashboardPage() {
               {sessions.map((session) => {
                 const matchScore = session.gap_analysis_json?.match_score;
                 const isReady = session.status === "BLUEPRINT_READY";
+                const isCompleted =
+                  session.status === "COMPLETED" || session.status === "EVALUATED";
+                const isInProgress = session.status === "IN_PROGRESS";
                 const isGenerating =
                   session.status === "BLUEPRINT_GENERATING" || session.status === "PARSING";
 
@@ -185,8 +188,12 @@ export default function DashboardPage() {
                         {/* Status Badge */}
                         <span
                           className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full border ${
-                            isReady
+                            isCompleted
+                              ? "bg-indigo-500/15 text-indigo-400 border-indigo-500/30"
+                              : isReady
                               ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                              : isInProgress
+                              ? "bg-cyan-500/15 text-cyan-400 border-cyan-500/30 animate-pulse"
                               : isGenerating
                               ? "bg-amber-500/15 text-amber-400 border-amber-500/30 animate-pulse"
                               : session.status.startsWith("FAILED")
@@ -227,12 +234,28 @@ export default function DashboardPage() {
                         {session.blueprint_json?.stages?.length || 0} stages configured
                       </span>
 
-                      {isReady ? (
+                      {isCompleted ? (
+                        <Link
+                          href={ROUTES.INTERVIEW_PREPARE(session.id)}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
+                        >
+                          <span>View Details</span>
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </Link>
+                      ) : isReady ? (
                         <Link
                           href={ROUTES.INTERVIEW_PREPARE(session.id)}
                           className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
                         >
                           <span>Review & Prepare</span>
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </Link>
+                      ) : isInProgress ? (
+                        <Link
+                          href={ROUTES.INTERVIEW_ROOM(session.id)}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-400 hover:text-cyan-300 transition-colors"
+                        >
+                          <span>Resume Interview</span>
                           <ArrowRight className="h-3.5 w-3.5" />
                         </Link>
                       ) : isGenerating ? (
@@ -242,6 +265,14 @@ export default function DashboardPage() {
                         >
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           <span>View Progress</span>
+                        </Link>
+                      ) : session.blueprint_json ? (
+                        <Link
+                          href={ROUTES.INTERVIEW_PREPARE(session.id)}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-slate-300 hover:text-white transition-colors"
+                        >
+                          <span>Details</span>
+                          <ArrowRight className="h-3.5 w-3.5" />
                         </Link>
                       ) : (
                         <Link
