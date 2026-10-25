@@ -474,10 +474,14 @@ class WebSocketSessionHandler:
         turn_num = self.orchestrator.total_turn_count + 1
 
         try:
+            phrase_idx = 0
             async for phrase in self.orchestrator.stream_ai_response(answer_text, self.session):
                 if self.was_interrupted:
                     break
                 accumulated_ai_response.append(phrase)
+                phrase_idx += 1
+                phrase_context_id = f"{context_id}-{phrase_idx}"
+                self.active_context_id = phrase_context_id
 
                 # Send real-time transcript update to UI
                 await self.ws.send_json(
@@ -490,7 +494,7 @@ class WebSocketSessionHandler:
                 )
 
                 # Synthesize and stream audio chunks for this phrase
-                await self._stream_tts(phrase, context_id, turn_num)
+                await self._stream_tts(phrase, phrase_context_id, turn_num)
 
             full_text = " ".join(accumulated_ai_response)
             self.last_question_text = full_text

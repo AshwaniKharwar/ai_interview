@@ -58,6 +58,9 @@ class CartesiaTTSService:
         """Sends transcript to Cartesia and yields base64-encoded PCM audio chunks.
         Yields base64 audio string for each chunk.
         """
+        if not text or not text.strip():
+            return
+
         if not self.ws or self._is_closed:
             await self.connect()
 
@@ -85,12 +88,14 @@ class CartesiaTTSService:
                     break
                 try:
                     data = json.loads(raw_message)
-                    if data.get("context_id") != ctx_id:
-                        continue
+                    msg_ctx = data.get("context_id")
                     if data.get("type") == "error" or data.get("error"):
-                        err_msg = data.get("error") or "Unknown Cartesia error"
-                        logger.error("Cartesia synthesis error: %s (status_code %s)", err_msg, data.get("status_code"))
-                        raise RuntimeError(f"Cartesia TTS error: {err_msg}")
+                        if not msg_ctx or msg_ctx == ctx_id:
+                            err_msg = data.get("error") or "Unknown Cartesia error"
+                            logger.error("Cartesia synthesis error: %s (status_code %s)", err_msg, data.get("status_code"))
+                            raise RuntimeError(f"Cartesia TTS error: {err_msg}")
+                    if msg_ctx != ctx_id:
+                        continue
                     if data.get("data"):
                         yield data["data"]
                     if data.get("done", False):

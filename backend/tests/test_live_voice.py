@@ -1,4 +1,6 @@
+import json
 import uuid
+from unittest.mock import AsyncMock, MagicMock
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -458,6 +460,126 @@ async def test_orchestrator_initial_greeting_and_contents_turn_rules(
     assert len(third_call_contents) == 1
     assert third_call_contents[0].role == "user"
     assert "first thought\nsecond thought after pause\nthird thought" in third_call_contents[0].parts[0].text
+
+
+@pytest.mark.asyncio
+async def test_process_ai_response_pipeline_subcontext_ids_per_phrase():
+    """Verify that multi-sentence responses generate unique sub-context IDs
+    per phrase to prevent Cartesia context collisions.
+    """
+    mock_ws = AsyncMock()
+    session_id = uuid.uuid4()
+    handler = WebSocketSessionHandler(mock_ws, session_id)
+
+    # Mock orchestrator yielding 3 distinct phrases
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.total_turn_count = 1
+    mock_orchestrator.get_stage_info.return_value = {
+        "stage_id": "warmup",
+        "stage_index": 0,
+        "total_stages": 2,
+        "time_remaining_seconds": 300,
+    }
+
+    async def mock_stream_ai_response(answer_text, session):
+        yield "First sentence in response."
+        yield "Second sentence probing deeper."
+        yield "Third sentence concluding question."
+
+    mock_orchestrator.stream_ai_response = mock_stream_ai_response
+    handler.orchestrator = mock_orchestrator
+    handler.session = MagicMock()
+
+    # Capture calls to _stream_tts
+    stream_tts_calls = []
+
+    async def mock_stream_tts(phrase, context_id, turn_num):
+        stream_tts_calls.append(
+            {
+                "phrase": phrase,
+                "context_id": context_id,
+                "turn_num": turn_num,
+                "active_context_at_call": handler.active_context_id,
+            }
+        )
+
+    handler._stream_tts = mock_stream_tts
+
+    turn_context_id = "test-turn-context-uuid"
+    handler.active_context_id = turn_context_id
+
+    await handler._process_ai_response_pipeline("candidate answer", turn_context_id)
+
+    # 1. Verify 3 phrases were streamed
+    assert len(stream_tts_calls) == 3
+
+    # 2. Verify subcontext IDs are unique per phrase and follow {context_id}-{phrase_idx}
+    assert stream_tts_calls[0]["phrase"] == "First sentence in response."
+    assert stream_tts_calls[0]["context_id"] == f"{turn_context_id}-1"
+    assert stream_tts_calls[0]["active_context_at_call"] == f"{turn_context_id}-1"
+
+    assert stream_tts_calls[1]["phrase"] == "Second sentence probing deeper."
+    assert stream_tts_calls[1]["context_id"] == f"{turn_context_id}-2"
+    assert stream_tts_calls[1]["active_context_at_call"] == f"{turn_context_id}-2"
+
+    assert stream_tts_calls[2]["phrase"] == "Third sentence concluding question."
+    assert stream_tts_calls[2]["context_id"] == f"{turn_context_id}-3"
+    assert stream_tts_calls[2]["active_context_at_call"] == f"{turn_context_id}-3"
+
+    # 3. Final active context ID is the last phrase context ID
+    assert handler.active_context_id == f"{turn_context_id}-3"
+
+    # 4. Final question text is joined correctly
+    assert (
+        handler.last_question_text
+        == "First sentence in response. Second sentence probing deeper. Third sentence concluding question."
+    )
+
+
+@pytest.mark.asyncio
+async def test_cartesia_tts_empty_text_and_error_handling(monkeypatch):
+    """Verify that CartesiaTTSService handles empty strings gracefully and raises
+    RuntimeError on Cartesia error frames.
+    """
+    monkeypatch.setattr(settings, "CARTESIA_API_KEY", "test-cartesia-key")
+    service = CartesiaTTSService(api_key="test-cartesia-key")
+
+    # Empty or whitespace text yields nothing and doesn't connect
+    chunks = [c async for c in service.stream_synthesize("")]
+    assert chunks == []
+    chunks_ws = [c async for c in service.stream_synthesize("   \n\t  ")]
+    assert chunks_ws == []
+
+    # Test error frame handling
+    mock_ws = AsyncMock()
+
+    class MockAsyncIter:
+        def __init__(self, items):
+            self.items = list(items)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self.items:
+                raise StopAsyncIteration
+            return self.items.pop(0)
+
+    error_response = json.dumps(
+        {
+            "context_id": "sub-ctx-1",
+            "type": "error",
+            "error": "Context sub-ctx-1 is already closed",
+            "status_code": 400,
+        }
+    )
+    mock_ws.__aiter__.side_effect = lambda: MockAsyncIter([error_response])
+    service.ws = mock_ws
+    service._is_closed = False
+
+    with pytest.raises(RuntimeError, match="Context sub-ctx-1 is already closed"):
+        _ = [c async for c in service.stream_synthesize("Hello world", context_id="sub-ctx-1")]
+
 
 
 
