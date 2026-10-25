@@ -581,6 +581,181 @@ async def test_cartesia_tts_empty_text_and_error_handling(monkeypatch):
         _ = [c async for c in service.stream_synthesize("Hello world", context_id="sub-ctx-1")]
 
 
+@pytest.mark.asyncio
+async def test_orchestrator_barge_in_interruption_persists_model_history_and_prevents_consecutive_user_turns(
+    db_session: AsyncSession, monkeypatch
+):
+    import asyncio
+    from unittest.mock import MagicMock
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def session_factory():
+        yield db_session
+
+    user = User(
+        id=uuid.uuid4(),
+        email="interruption_test@example.com",
+        full_name="Interruption User",
+        google_id="g_interruption",
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+
+    blueprint_mock = {
+        "total_duration_minutes": 15,
+        "difficulty_level": "medium",
+        "interviewer_persona": "collaborative",
+        "stages": [
+            {
+                "stage_id": "warmup",
+                "title": "Warmup",
+                "duration_minutes": 5,
+                "min_turns": 1,
+                "max_turns": 3,
+                "objective": "Introduction",
+                "transition_criteria": "Done",
+                "focus_areas": ["Python"],
+                "starter_questions": ["Tell me about yourself."],
+                "follow_up_probes": ["Any projects?"],
+            }
+        ],
+    }
+
+    session = InterviewSession(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        job_title="Backend Engineer",
+        job_description_raw="Python Developer",
+        blueprint_json=blueprint_mock,
+        status=InterviewStatus.BLUEPRINT_READY.value,
+    )
+    db_session.add(session)
+    await db_session.commit()
+
+    orchestrator = ConversationalOrchestrator(session.id, session_factory)
+    await orchestrator.initialize()
+
+    # Initial state: candidate says hello, AI responds with greeting
+    orchestrator.history = [
+        {"role": "user", "content": "Hello, I am ready to begin."},
+        {"role": "model", "content": "Welcome! Could you tell me about your background?"},
+    ]
+
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "fake-gemini-key")
+
+    captured_contents = []
+
+    async def mock_generate_content_stream_interrupted(*args, **kwargs):
+        captured_contents.append(kwargs.get("contents", []))
+
+        class MockChunk1:
+            text = "That sounds interesting! "
+
+        class MockChunk2:
+            text = "Can you elaborate on your Python experience?"
+
+        async def chunk_generator():
+            yield MockChunk1()
+            await asyncio.sleep(0.5)
+            yield MockChunk2()
+
+        return chunk_generator()
+
+    mock_client = MagicMock()
+    mock_client.aio.models.generate_content_stream = mock_generate_content_stream_interrupted
+    monkeypatch.setattr("apps.interview.services.orchestrator.genai.Client", lambda api_key: mock_client)
+
+    # Turn 1: Candidate starts speaking, AI starts answering, but candidate interrupts
+    async def run_and_interrupt():
+        stream = orchestrator.stream_ai_response("I have worked with Django for 3 years.", session)
+        try:
+            async for chunk in stream:
+                asyncio.current_task().cancel()
+                await asyncio.sleep(0)
+        finally:
+            await stream.aclose()
+
+    task = asyncio.create_task(run_and_interrupt())
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    # Verify that orchestrator.history contains the interrupted model turn
+    assert len(orchestrator.history) == 4
+    assert orchestrator.history[2]["role"] == "user"
+    assert orchestrator.history[2]["content"] == "I have worked with Django for 3 years."
+    assert orchestrator.history[3]["role"] == "model"
+    assert orchestrator.history[3]["content"] == "That sounds interesting!"
+
+    # Turn 2: Candidate speaks again on the next turn.
+    # Verify that contents sent to Gemini does NOT have consecutive user roles
+    captured_contents.clear()
+
+    async def mock_generate_content_stream_turn2(*args, **kwargs):
+        captured_contents.append(kwargs.get("contents", []))
+
+        class MockChunk:
+            text = "Understood. Let's move to async programming."
+
+        async def chunk_generator():
+            yield MockChunk()
+
+        return chunk_generator()
+
+    mock_client.aio.models.generate_content_stream = mock_generate_content_stream_turn2
+
+    _ = [c async for c in orchestrator.stream_ai_response("Also worked with FastAPI.", session)]
+
+    assert len(captured_contents) == 1
+    call2_contents = captured_contents[0]
+    # Ensure Gemini receives alternating roles: user, model, user, model, user
+    assert len(call2_contents) == 5
+    for i in range(len(call2_contents)):
+        expected_role = "user" if i % 2 == 0 else "model"
+        assert call2_contents[i].role == expected_role
+
+
+@pytest.mark.asyncio
+async def test_process_ai_response_pipeline_cancellation_updates_last_question_text():
+    """Verify that when active_ai_task is cancelled during response pipeline,
+    last_question_text is updated with partial text or interrupted marker.
+    """
+    import asyncio
+    from unittest.mock import MagicMock
+    mock_ws = AsyncMock()
+    handler = WebSocketSessionHandler(mock_ws, uuid.uuid4())
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.total_turn_count = 1
+    mock_orchestrator.get_stage_info.return_value = {
+        "stage_id": "warmup",
+        "stage_index": 0,
+        "total_stages": 3,
+        "time_remaining_seconds": 300,
+    }
+
+    async def mock_stream_ai_response(answer_text, session):
+        yield "First sentence generated."
+        # Simulate interruption during streaming
+        raise asyncio.CancelledError()
+
+    mock_orchestrator.stream_ai_response = mock_stream_ai_response
+    handler.orchestrator = mock_orchestrator
+    handler.session = MagicMock()
+
+    async def mock_stream_tts(text, context_id, turn_num):
+        pass
+
+    handler._stream_tts = mock_stream_tts
+
+    # Run pipeline in a task and let it get cancelled
+    await handler._process_ai_response_pipeline("candidate answer", "ctx-test-123")
+
+    # Verify last_question_text was persisted with the partial sentence
+    assert handler.last_question_text == "First sentence generated."
+
+
+
 
 
 

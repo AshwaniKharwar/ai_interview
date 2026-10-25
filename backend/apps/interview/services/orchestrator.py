@@ -257,13 +257,22 @@ CRITICAL VOICE INTERACTION RULES:
             if trailing:
                 yield trailing
 
+        except asyncio.CancelledError:
+            logger.info("Gemini stream cancelled by interruption.")
+            partial_text = "".join(full_ai_text).strip()
+            self.history.append({"role": "model", "content": partial_text or "[Response interrupted]"})
+            raise
+        except GeneratorExit:
+            logger.info("Gemini stream closed by consumer exit.")
+            partial_text = "".join(full_ai_text).strip()
+            self.history.append({"role": "model", "content": partial_text or "[Response interrupted]"})
+            raise
         except Exception as e:
             logger.error("Error generating Gemini stream: %s", e)
             raise
 
         complete_text = "".join(full_ai_text).strip()
-        if complete_text:
-            self.history.append({"role": "model", "content": complete_text})
+        self.history.append({"role": "model", "content": complete_text or "[Response interrupted]"})
 
     async def record_completed_turn(
         self,

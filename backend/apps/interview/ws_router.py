@@ -312,19 +312,20 @@ class WebSocketSessionHandler:
         )
         await self.active_ai_task
 
-        # Return to LISTENING
+        # Return to LISTENING if not interrupted
         self.turn_start_time = time.time()
-        stage_info = self.orchestrator.get_stage_info()
-        await self.ws.send_json(
-            {
-                "type": "state_change",
-                "state": "LISTENING",
-                "current_stage": stage_info["stage_id"],
-                "stage_index": stage_info["stage_index"],
-                "total_stages": stage_info["total_stages"],
-                "time_remaining_seconds": stage_info["time_remaining_seconds"],
-            }
-        )
+        if not self.was_interrupted:
+            stage_info = self.orchestrator.get_stage_info()
+            await self.ws.send_json(
+                {
+                    "type": "state_change",
+                    "state": "LISTENING",
+                    "current_stage": stage_info["stage_id"],
+                    "stage_index": stage_info["stage_index"],
+                    "total_stages": stage_info["total_stages"],
+                    "time_remaining_seconds": stage_info["time_remaining_seconds"],
+                }
+            )
 
     async def _handle_interrupt(self):
         """Immediately flushes active AI synthesis and playback upon candidate barge-in."""
@@ -445,13 +446,16 @@ class WebSocketSessionHandler:
                 await self._handle_session_end()
                 return
 
+        # Cancel any previous AI task still running
+        if self.active_ai_task and not self.active_ai_task.done():
+            self.active_ai_task.cancel()
+
         # Stream AI response using Gemini + Cartesia
         self.was_interrupted = False
         self.active_context_id = str(uuid.uuid4())
         self.active_ai_task = asyncio.create_task(
             self._process_ai_response_pipeline(answer_text, self.active_context_id)
         )
-        await self.active_ai_task
 
     async def _process_ai_response_pipeline(self, answer_text: str, context_id: str):
         """Streams sentences from Gemini to Cartesia and transmits audio chunks to client."""
@@ -472,10 +476,11 @@ class WebSocketSessionHandler:
 
         accumulated_ai_response = []
         turn_num = self.orchestrator.total_turn_count + 1
+        ai_stream = self.orchestrator.stream_ai_response(answer_text, self.session)
 
         try:
             phrase_idx = 0
-            async for phrase in self.orchestrator.stream_ai_response(answer_text, self.session):
+            async for phrase in ai_stream:
                 if self.was_interrupted:
                     break
                 accumulated_ai_response.append(phrase)
@@ -510,10 +515,24 @@ class WebSocketSessionHandler:
 
         except asyncio.CancelledError:
             logger.info("AI response pipeline task cancelled.")
+            partial_text = " ".join(accumulated_ai_response).strip()
+            self.last_question_text = partial_text or "[Response interrupted]"
         except Exception as e:
             logger.error("Error in AI response pipeline: %s", e)
+            try:
+                await self.ws.send_json(
+                    {
+                        "type": "error",
+                        "code": "SESSION_RUNTIME_ERROR",
+                        "message": str(e),
+                        "fatal": True,
+                    }
+                )
+            except Exception:
+                pass
             raise
         finally:
+            await ai_stream.aclose()
             self.turn_start_time = time.time()
             if not self.was_interrupted:
                 stage_info = self.orchestrator.get_stage_info()
