@@ -322,4 +322,143 @@ async def test_websocket_interrupt_handling():
     assert ack_call["type"] == "interrupt_ack"
 
 
+@pytest.mark.asyncio
+async def test_orchestrator_initial_greeting_and_contents_turn_rules(
+    db_session: AsyncSession, monkeypatch
+):
+    from unittest.mock import MagicMock
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def session_factory():
+        yield db_session
+
+    user = User(
+        id=uuid.uuid4(),
+        email="test_turns@example.com",
+        full_name="Turn User",
+        google_id="g_turns",
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+
+    blueprint_mock = {
+        "total_duration_minutes": 15,
+        "difficulty_level": "medium",
+        "interviewer_persona": "collaborative",
+        "stages": [
+            {
+                "stage_id": "intro",
+                "title": "Intro Stage",
+                "duration_minutes": 5,
+                "min_turns": 1,
+                "max_turns": 3,
+                "objective": "Intro objective",
+                "transition_criteria": "Done intro",
+                "focus_areas": ["Intro"],
+                "starter_questions": ["Tell me about your background."],
+                "follow_up_probes": ["Can you give an example?"],
+            }
+        ],
+    }
+
+    session = InterviewSession(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        job_title="Backend Engineer",
+        job_description_raw="Python developer",
+        blueprint_json=blueprint_mock,
+        status=InterviewStatus.BLUEPRINT_READY.value,
+    )
+    db_session.add(session)
+    await db_session.commit()
+    await db_session.refresh(session)
+
+    orchestrator = ConversationalOrchestrator(session.id, session_factory)
+    await orchestrator.initialize()
+
+    # 1. Verify generate_initial_greeting appends candidate trigger before model greeting
+    greeting = await orchestrator.generate_initial_greeting(session)
+    assert len(orchestrator.history) == 2
+    assert orchestrator.history[0]["role"] == "user"
+    assert orchestrator.history[0]["content"] == "Hello, I am ready to begin the interview."
+    assert orchestrator.history[1]["role"] == "model"
+    assert orchestrator.history[1]["content"] == greeting
+
+    # 2. Mock Gemini client to capture contents passed to generate_content_stream
+    captured_contents = []
+
+    async def mock_generate_content_stream(*args, **kwargs):
+        captured_contents.append(kwargs.get("contents", []))
+
+        class MockChunk:
+            text = "Thank you for sharing that background."
+
+        async def chunk_generator():
+            yield MockChunk()
+
+        return chunk_generator()
+
+    mock_client = MagicMock()
+    mock_client.aio.models.generate_content_stream = mock_generate_content_stream
+    monkeypatch.setattr("apps.interview.services.orchestrator.genai.Client", lambda api_key: mock_client)
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "fake-gemini-key")
+
+    # Turn 1: Candidate answers greeting
+    chunks = [c async for c in orchestrator.stream_ai_response("I have 4 years of Python.", session)]
+    assert len(chunks) == 1
+    assert "Thank you" in chunks[0]
+
+    first_call_contents = captured_contents[0]
+    assert len(first_call_contents) == 3
+    # Gemini requires first content to be user
+    assert first_call_contents[0].role == "user"
+    assert first_call_contents[0].parts[0].text == "Hello, I am ready to begin the interview."
+    assert first_call_contents[1].role == "model"
+    assert first_call_contents[1].parts[0].text == greeting
+    assert first_call_contents[2].role == "user"
+    assert first_call_contents[2].parts[0].text == "I have 4 years of Python."
+
+    # 3. Simulate multi-turn history where slicing [-8:] begins with a model turn
+    # Manually populate history to test sliding window trimming
+    orchestrator.history = [
+        {"role": "user", "content": "u1"},
+        {"role": "model", "content": "m1"},
+        {"role": "user", "content": "u2"},
+        {"role": "model", "content": "m2"},
+        {"role": "user", "content": "u3"},
+        {"role": "model", "content": "m3"},
+        {"role": "user", "content": "u4"},
+        {"role": "model", "content": "m4"},
+    ]
+    # At this point, history has 8 items ending in model.
+    # When stream_ai_response is called with u5, history becomes 9 items.
+    # history[-8:] would select m1 (model), u2, m2, u3, m3, u4, m4, u5.
+    # The trimmer must strip m1 so contents begins with u2 (user).
+    captured_contents.clear()
+    _ = [c async for c in orchestrator.stream_ai_response("u5", session)]
+
+    second_call_contents = captured_contents[0]
+    assert second_call_contents[0].role == "user"
+    assert second_call_contents[0].parts[0].text == "u2"
+    # Ensure all contents strictly alternate roles
+    for i in range(len(second_call_contents) - 1):
+        assert second_call_contents[i].role != second_call_contents[i + 1].role
+
+    # 4. Simulate consecutive turns of same role (e.g. candidate interruption)
+    orchestrator.history = [
+        {"role": "user", "content": "first thought"},
+        {"role": "user", "content": "second thought after pause"},
+    ]
+    captured_contents.clear()
+    _ = [c async for c in orchestrator.stream_ai_response("third thought", session)]
+
+    third_call_contents = captured_contents[0]
+    assert len(third_call_contents) == 1
+    assert third_call_contents[0].role == "user"
+    assert "first thought\nsecond thought after pause\nthird thought" in third_call_contents[0].parts[0].text
+
+
+
 

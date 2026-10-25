@@ -174,6 +174,8 @@ CRITICAL VOICE INTERACTION RULES:
             f"Hello and welcome! I am your AI interviewer for the {session.job_title} role. "
             f"We will start with {stage.title}. To begin, {starter}"
         )
+        # Seed initial candidate readiness trigger so history begins with a user turn
+        self.history.append({"role": "user", "content": "Hello, I am ready to begin the interview."})
         self.history.append({"role": "model", "content": greeting})
         self.total_turn_count += 1
         self.current_stage_turn_count += 1
@@ -198,15 +200,29 @@ CRITICAL VOICE INTERACTION RULES:
 
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-        # Build message contents from history
-        contents = []
-        for msg in self.history[-8:]:  # Keep recent history for turn context
-            contents.append(
-                types.Content(
-                    role=msg["role"],
-                    parts=[types.Part.from_text(text=msg["content"])],
-                )
+        # Build message contents ensuring it begins with user and strictly alternates
+        raw_slice = self.history[-8:]
+        while raw_slice and raw_slice[0]["role"] == "model":
+            raw_slice = raw_slice[1:]
+
+        if not raw_slice:
+            raw_slice = [{"role": "user", "content": candidate_transcript}]
+
+        # Coalesce consecutive turns with the same role to maintain strict alternation
+        coalesced: List[Dict[str, str]] = []
+        for msg in raw_slice:
+            if coalesced and coalesced[-1]["role"] == msg["role"]:
+                coalesced[-1]["content"] += f"\n{msg['content']}"
+            else:
+                coalesced.append({"role": msg["role"], "content": msg["content"]})
+
+        contents = [
+            types.Content(
+                role=msg["role"],
+                parts=[types.Part.from_text(text=msg["content"])],
             )
+            for msg in coalesced
+        ]
 
         full_ai_text = []
         try:
