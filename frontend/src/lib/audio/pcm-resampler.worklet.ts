@@ -8,6 +8,7 @@ class PCMResamplerProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.targetSampleRate = 16000;
+    this.phase = 0;
   }
 
   process(inputs, outputs, parameters) {
@@ -20,6 +21,7 @@ class PCMResamplerProcessor extends AudioWorkletProcessor {
     const sourceSampleRate = sampleRate;
 
     if (sourceSampleRate === this.targetSampleRate) {
+      this.phase = 0;
       const pcm16 = new Int16Array(channelData.length);
       for (let i = 0; i < channelData.length; i++) {
         const s = Math.max(-1, Math.min(1, channelData[i]));
@@ -29,23 +31,32 @@ class PCMResamplerProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    // Linear interpolation downsampling
+    // Linear interpolation downsampling tracking phase across quantum boundaries
     const ratio = sourceSampleRate / this.targetSampleRate;
-    const newLength = Math.floor(channelData.length / ratio);
-    const pcm16 = new Int16Array(newLength);
+    let srcIndex = this.phase;
+    const outputSamples = [];
 
-    for (let i = 0; i < newLength; i++) {
-      const srcIndex = i * ratio;
+    while (srcIndex < channelData.length) {
       const iFloor = Math.floor(srcIndex);
       const iCeil = Math.min(channelData.length - 1, iFloor + 1);
-      const interpolation = srcIndex - iFloor;
+      const frac = srcIndex - iFloor;
 
-      const sample = channelData[iFloor] * (1 - interpolation) + channelData[iCeil] * interpolation;
-      const clamped = Math.max(-1, Math.min(1, sample));
-      pcm16[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
+      const sample = channelData[iFloor] * (1 - frac) + channelData[iCeil] * frac;
+      outputSamples.push(Math.max(-1, Math.min(1, sample)));
+      srcIndex += ratio;
     }
 
-    this.port.postMessage(pcm16.buffer, [pcm16.buffer]);
+    this.phase = srcIndex - channelData.length;
+
+    if (outputSamples.length > 0) {
+      const pcm16 = new Int16Array(outputSamples.length);
+      for (let i = 0; i < outputSamples.length; i++) {
+        const s = outputSamples[i];
+        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      this.port.postMessage(pcm16.buffer, [pcm16.buffer]);
+    }
+
     return true;
   }
 }
