@@ -15,9 +15,11 @@ from apps.interview.schemas import (
     StageRegenerateRequest,
 )
 from apps.interview.service import InterviewService
+from apps.interview.ws_router import ws_router
 from core.database import get_db
 
 router = APIRouter(prefix="/interviews", tags=["Interviews"])
+router.include_router(ws_router)
 
 
 @router.post("/upload-resume", response_model=ResumeUploadResponse)

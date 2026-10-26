@@ -1,6 +1,7 @@
 export { HttpClient, httpClient, ApiError, type RequestOptions } from "./client";
 export { AuthApiService, authApi } from "./services/auth.service";
 export { InterviewApiService, interviewApi } from "./services/interview.service";
+export { LiveSessionApiService, liveSessionApi } from "./services/live-session.service";
 
 import { authApi } from "./services/auth.service";
 import { interviewApi } from "./services/interview.service";

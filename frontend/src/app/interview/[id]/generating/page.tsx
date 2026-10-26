@@ -76,6 +76,16 @@ function GeneratingContent() {
 
         setStatusData(res);
 
+        if (res.status === "COMPLETED" || res.status === "EVALUATED") {
+          router.replace(ROUTES.INTERVIEW_PREPARE(sessionId));
+          return;
+        }
+
+        if (res.status === "IN_PROGRESS") {
+          router.replace(ROUTES.INTERVIEW_ROOM(sessionId));
+          return;
+        }
+
         if (res.status === "BLUEPRINT_READY") {
           setActiveStep(4);
           // Wait briefly for user to see completed state, then push
@@ -125,7 +135,10 @@ function GeneratingContent() {
   };
 
   const isFailed = statusData?.status.startsWith("FAILED") || Boolean(errorMessage);
-  const isComplete = statusData?.status === "BLUEPRINT_READY";
+  const isComplete =
+    statusData?.status === "BLUEPRINT_READY" ||
+    statusData?.status === "COMPLETED" ||
+    statusData?.status === "EVALUATED";
 
   return (
     <AuthenticatedLayout>

@@ -135,3 +135,47 @@ export interface InterviewStatusResponse {
   error_message?: string | null;
   has_blueprint: boolean;
 }
+
+export interface InterviewTurn {
+  id: string;
+  session_id: string;
+  turn_index: number;
+  stage_id: string;
+  question_text: string;
+  answer_transcript?: string | null;
+  started_at: string;
+  ended_at?: string | null;
+  latency_ms?: number | null;
+  was_interrupted: boolean;
+  turn_evaluation_json?: Record<string, unknown> | null;
+}
+
+export type LiveSessionState =
+  | "INIT"
+  | "AI_SPEAKING"
+  | "LISTENING"
+  | "PROCESSING"
+  | "INTERRUPT_FLUSH"
+  | "COMPLETED";
+
+export interface TranscriptEntry {
+  id: string;
+  speaker: "ai" | "candidate";
+  text: string;
+  isFinal: boolean;
+  timestamp: number;
+  stageId?: string;
+}
+
+export interface ActiveStageInfo {
+  stage_id: string;
+  title: string;
+  stage_index: number;
+  total_stages: number;
+  turn_in_stage?: number;
+  max_turns: number;
+  min_turns?: number;
+  duration_minutes: number;
+  time_remaining_seconds: number;
+}
+

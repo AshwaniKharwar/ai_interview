@@ -121,6 +121,8 @@ dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "boto3" },
+    { name = "cartesia" },
+    { name = "deepgram-sdk" },
     { name = "email-validator" },
     { name = "fastapi" },
     { name = "google-genai" },
@@ -147,6 +149,8 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.20.0" },
     { name = "asyncpg", specifier = ">=0.32.0" },
     { name = "boto3", specifier = ">=1.43.114" },
+    { name = "cartesia", specifier = ">=4.2.0" },
+    { name = "deepgram-sdk", specifier = ">=7.13.0" },
     { name = "email-validator", specifier = ">=2.3.0" },
     { name = "fastapi", specifier = ">=0.143.3" },
     { name = "google-genai", specifier = ">=2.31.0" },
@@ -194,6 +198,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ce/c8/b508359d1f3846a918c06807a9ae27eee063f904559269e42ccde9de09ea/botocore-1.43.114.tar.gz", hash = "sha256:f366fa4db518775632ad1eb128cd8203ca46396cecf37209d904f0bbc049ce90", size = 16369844, upload-time = "2026-10-14T19:24:17.683Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9a/41/7c6fa7ac5fcfd5ea3c6f32aab001942da32b184a210f39042778cb1ad8ed/botocore-1.43.114-py3-none-any.whl", hash = "sha256:d1c441a22e93e158de5b1e026205f5d6d67a4545d10540c5090c62dccb3a9eca", size = 16067885, upload-time = "2026-10-14T19:24:14.629Z" },
+]
+
+[[package]]
+name = "cartesia"
+version = "4.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ef/cd/8841344c7753667f00357abdafdb3417a7ba86abdb7de43e93b6c09ea154/cartesia-4.2.0.tar.gz", hash = "sha256:c36c905f8a459eafaa555dc75d811f2d47770bc4a784e59b9428f3668248ac99", size = 342000, upload-time = "2026-09-02T21:35:03.479Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f8/52/eb40886f218f8613f1fd62d3aa2d3d92595bd1eca8c1a2ecfed6d4dcf4e2/cartesia-4.2.0-py3-none-any.whl", hash = "sha256:8ad6648670819da99e43722b52151ba0b050eb1898da485af8f3767f24b43715", size = 220715, upload-time = "2026-09-02T21:35:05.076Z" },
 ]
 
 [[package]]
@@ -472,6 +493,22 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/10/bf/8d6ebc7dded797bd0f0160d52188021211f011a2b164ef0ae1dac4587465/cryptography-50.0.2-cp39-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:7a8701d6b584d76e909e3d305b7d126b41439876a5aaf76cddc67fc230eafa2e", size = 4897738, upload-time = "2026-09-30T15:29:43.106Z" },
     { url = "https://files.pythonhosted.org/packages/d4/aa/f3f6e0de7e6253b8baa8b2d8fb9d50924fa75cee3d4624bd4bc1208ee923/cryptography-50.0.2-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:ce47f66801c20ec6c6632453bb5960fe38939e9306970b48b3a5a26de7745d94", size = 5058280, upload-time = "2026-09-30T15:29:44.827Z" },
     { url = "https://files.pythonhosted.org/packages/f6/b6/a1faf3a27ae9405fb34b1713cc73b2d8a26b04d5c561578fa2e6ef3e5bb9/cryptography-50.0.2-cp39-abi3-win_amd64.whl", hash = "sha256:4e81d95e5bafc2d6e34e4bed780e53e4d5b9a2f928573428aa4d35fbec1eb0de", size = 3854095, upload-time = "2026-09-30T15:29:46.782Z" },
+]
+
+[[package]]
+name = "deepgram-sdk"
+version = "7.13.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-core" },
+    { name = "typing-extensions" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/20/32/02856581cc8c50c48392530b2a6fe52e052218e0581ba3bf4983efe70da8/deepgram_sdk-7.13.0.tar.gz", hash = "sha256:e7e5a3bcf261cbd1f2ee8987adcdd21acce6268bf5904dc943fefe4b9577a8ef", size = 252676, upload-time = "2026-10-12T08:49:45.268Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0a/27/a1f6c03d9243f996bf67ae872c796c49fcfb066dd3c2338b5d3b68f9c6ea/deepgram_sdk-7.13.0-py3-none-any.whl", hash = "sha256:dff3ed7929bef4c2dc6d87003d8fa7994501e52a41212416b4a81258da76f415", size = 660444, upload-time = "2026-10-12T08:49:43.944Z" },
 ]
 
 [[package]]

@@ -61,6 +61,21 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.0-flash"
 
+    # Voice Engine (STT & TTS) Settings
+    DEEPGRAM_API_KEY: str = Field(
+        default="", description="Deepgram Nova-2 API key for streaming STT"
+    )
+    CARTESIA_API_KEY: str = Field(
+        default="", description="Cartesia Sonic API key for ultra-low latency TTS"
+    )
+    CARTESIA_VOICE_ID: str = Field(
+        default="3a01612e-07da-4a85-bba8-ce10481df477",
+        description="Cartesia Sonic Voice ID (default: Gareth - Conversational Specialist)",
+    )
+    CARTESIA_MODEL_ID: str = Field(
+        default="sonic-2", description="Cartesia model ID"
+    )
+
     @property
     def r2_endpoint(self) -> str:
         if self.R2_ENDPOINT_URL:
